@@ -152,11 +152,8 @@ case ${TARGET} in
         cargo_test
         cargo_test "--release" "--features=into_bits"
 
-        # FIXME: this doesn't compile succesfully
-        # https://github.com/rust-lang-nursery/packed_simd/issues/18
-        #
-        # export RUSTFLAGS="${RUSTFLAGS} -C target-feature=+msa -C target-cpu=mips64r6"
-        # cargo_test "--release" "--features=into_bits"
+        export RUSTFLAGS="${RUSTFLAGS} -C target-feature=+msa -C target-cpu=mips64r6"
+        cargo_test "--release" "--features=into_bits"
         ;;
     powerpc-*)
         cargo_test

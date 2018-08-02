@@ -2,66 +2,79 @@
 
 macro_rules! impl_reduction_min_max {
     ([$elem_ty:ident; $elem_count:expr]: $id:ident) => {
-        impl $id {
-            /// Largest vector element value.
-            #[inline]
-            pub fn max_element(self) -> $elem_ty {
-                #[cfg(not(any(target_arch = "aarch64", target_arch = "arm")))]
-                {
-                    use llvm::simd_reduce_max;
-                    unsafe { simd_reduce_max(self.0) }
-                }
-                #[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
-                {
-                    // FIXME: broken on AArch64
-                    // https://github.com/rust-lang-nursery/packed_simd/issues/15
-                    let mut x = self.extract(0);
-                    for i in 1..$id::lanes() {
-                        x = x.max(self.extract(i));
+        cfg_if! {
+            if #[cfg(any(
+                target_arch = "aarch64",
+                target_arch = "arm",
+                all(any(target_arch = "mips",
+                        target_arch = "mips64"),
+                    target_feature = "msa")
+            ))] {
+                impl $id {
+                    /// Largest vector element value.
+                    #[inline]
+                    pub fn max_element(self) -> $elem_ty {
+                        // FIXME: broken on AArch64
+                        // https://github.com/rust-lang-nursery/packed_simd/issues/15
+                        // FIXME: broken on MIPS
+                        // https://github.com/rust-lang-nursery/packed_simd/issues/18
+                        let mut x = self.extract(0);
+                        for i in 1..$id::lanes() {
+                            x = x.max(self.extract(i));
+                        }
+                        x
                     }
-                    x
                 }
-            }
-
-            /// Smallest vector element value.
-            #[inline]
-            pub fn min_element(self) -> $elem_ty {
-                #[cfg(
-                    not(
-                        any(
-                            target_arch = "aarch64",
-                            target_arch = "arm",
-                            all(
-                                target_arch = "x86",
-                                not(target_feature = "sse2")
-                            )
-                        )
-                    )
-                )]
-                {
-                    use llvm::simd_reduce_min;
-                    unsafe { simd_reduce_min(self.0) }
-                }
-                #[cfg(
-                    any(
-                        target_arch = "aarch64",
-                        target_arch = "arm",
-                        all(target_arch = "x86", not(target_feature = "sse2"))
-                    )
-                )]
-                {
-                    // FIXME: broken on AArch64
-                    // https://github.com/rust-lang-nursery/packed_simd/issues/15
-                    // FIXME: broken on i586-unknown-linux-gnu
-                    // https://github.com/rust-lang-nursery/packed_simd/issues/22
-                    let mut x = self.extract(0);
-                    for i in 1..$id::lanes() {
-                        x = x.min(self.extract(i));
+            } else {
+                impl $id {
+                    /// Largest vector element value.
+                    #[inline]
+                    pub fn max_element(self) -> $elem_ty {
+                        use llvm::simd_reduce_max;
+                        unsafe { simd_reduce_max(self.0) }
                     }
-                    x
                 }
             }
         }
+
+        cfg_if! {
+            if #[cfg(any(
+                target_arch = "aarch64",
+                target_arch = "arm",
+                all(any(target_arch = "mips", target_arch = "mips64"),
+                    target_feature = "msa"),
+                all(target_arch = "x86", not(target_feature = "sse2"))
+            ))]
+            {
+                impl $id {
+                    /// Smallest vector element value.
+                    #[inline]
+                    pub fn min_element(self) -> $elem_ty {
+                        // FIXME: broken on AArch64
+                        // https://github.com/rust-lang-nursery/packed_simd/issues/15
+                        // FIXME: broken on i586-unknown-linux-gnu
+                        // https://github.com/rust-lang-nursery/packed_simd/issues/22
+                        // FIXME: broken on MIPS
+                        // https://github.com/rust-lang-nursery/packed_simd/issues/18
+                        let mut x = self.extract(0);
+                        for i in 1..$id::lanes() {
+                            x = x.min(self.extract(i));
+                        }
+                        x
+                    }
+                }
+            } else {
+                impl $id {
+                    /// Smallest vector element value.
+                    #[inline]
+                    pub fn min_element(self) -> $elem_ty {
+                        use llvm::simd_reduce_min;
+                        unsafe { simd_reduce_min(self.0) }
+                    }
+                }
+            }
+        }
+
         #[cfg(test)]
         interpolate_idents! {
             mod [$id _reduction_min_max] {
@@ -75,7 +88,7 @@ macro_rules! impl_reduction_min_max {
                         assert_eq!(v.max_element(), 1 as $elem_ty);
                     }
                     let v = v.replace(0, 2 as $elem_ty);
-                    assert_eq!(v.max_element(), 2 as $elem_ty);
+                        assert_eq!(v.max_element(), 2 as $elem_ty);
                 }
 
                 #[test]
@@ -121,6 +134,10 @@ macro_rules! test_reduction_float_min_max {
 
                     let target_with_broken_last_lane_nan = !cfg!(any(
                         target_arch = "arm", target_arch = "aarch64",
+                        all(
+                            any(target_arch = "mips",target_arch = "mips64"),
+                            target_feature = "msa"
+                        ),
                         all(target_arch = "x86", not(target_feature = "sse2"))
                     ));
 
@@ -223,7 +240,11 @@ macro_rules! test_reduction_float_min_max {
                     let v0 = $id::splat(-3.);
 
                     let target_with_broken_last_lane_nan = !cfg!(any(
-                        target_arch = "arm", target_arch = "aarch64"
+                        target_arch = "arm", target_arch = "aarch64",
+                        all(
+                            any(target_arch = "mips",target_arch = "mips64"),
+                            target_feature = "msa"
+                        )
                     ));
 
                     // The vector is initialized to `-3.`s: [-3, -3, -3, -3]
